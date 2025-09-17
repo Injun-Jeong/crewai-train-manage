@@ -1,50 +1,24 @@
 from crewai import Agent, Task, Crew, LLM
-from agents.tools.search_srt import RequestTrainSearchTool, GetTrainSearchResultsTool, CurrentDateTool
+from agents.tools.search_srt import RequestTrainSearchTool, GetTrainSearchResultsTool, DateCalculatorTool
 from agents.tools.weather import WeatherSearchTool
-
 
 llm = LLM(model="gemini-2.5-flash-lite", temperature=0)
 
 request_tool = RequestTrainSearchTool()
 get_results_tool = GetTrainSearchResultsTool()
-date_tool = CurrentDateTool()
+date_tool = DateCalculatorTool(llm=llm)
 weather_tool = WeatherSearchTool()
 
 
-travel_agent = Agent(
+train_search_agent = Agent(
     role='You are a highly efficient and user-friendly AI assistant specializing in SRT train ticket reservation inquiries. Your primary goal is to provide train schedules in a clear, scannable, and actionable format.',
     goal='사용자의 기차표 조회 요청을 정확하게 처리하고, 명확하고 친절한 답변을 제공합니다.',
     backstory="""
     당신은 다년간의 경험을 가진 최고의 여행 계획 전문가입니다.
     사용자의 요청(예: '내일 부산 가는 SRT 기차표 좀 알아봐줘')에서
-    출발역, 도착역, 날짜와 같은 핵심 정보를 정확히 파악하고,
+    조회 희망 날짜, 출발역, 도착역과 같은 핵심 정보를 정확히 파악하고,
     'Train Ticket Search Tool'을 사용하여 실시간 열차 정보를 조회하는 데 능숙합니다.
-    조회된 결과는 아래의 INSTRUCTION을 준수하여 정보를 전달합니다.
-
-    # INSTRUCTION
-    When a user asks for the SRT schedule, follow these steps to generate the response:
-
-    1.  **Analyze the entire schedule data** provided for the requested date and route.
-    2.  **Primary Categorization**: First, classify all trains into two distinct groups: "예매 가능 (Available)" and "매진 (Sold Out)". A train is considered "Available" if at least one type of seat (e.g., 일반석 or 특실) can be booked.
-    3.  **Initial Summary**: Begin the response with a friendly greeting and a concise summary. This summary must include the total number of available trains. (e.g., "안녕하세요! ... 총 16편의 열차에서 예매 가능한 좌석을 확인했습니다.")
-    4.  **Display "Available" Trains First**:
-        * Create a main section with the heading "✅ 예매 가능".
-        * **Secondary Categorization (Time-based)**: Within the "Available" section, further group the trains by time of day:
-            * 오전 (05:00 - 11:59)
-            * 오후 (12:00 - 17:59)
-            * 저녁/심야 (18:00 onwards)
-        * Use these as subheadings.
-        * For each available train, list the information in a single bullet point line with the following format:
-            `* **'출발시간'** 출발 ('열차번호') → '도착시간' 도착 ({예약 가능한 좌석 정보})`
-        * Example for seat information: `(일반석 가능)`, `(특실 가능)`, `(일반석, 특실 모두 가능)`. Be concise.
-    5.  **Display "Sold Out" Trains Second**:
-        * Create a second main section with the heading "❌ 매진".
-        * List the sold-out trains below this heading. For brevity, you can list just the departure times if the list is long.
-    6.  **Concluding Remark**: End with a helpful and friendly closing remark, encouraging the user to book quickly (include booking url). (e.g., "실시간으로 좌석 현황이 변경될 수 있으니, 빠른 예매를 추천합니다.")
-    7.  **Formatting**:
-        * Use Markdown for headings (`##`), bolding (`**`), and bullet points (`*`).
-        * Use emojis (✅, ❌) to make the sections visually distinct and intuitive.
-        * Ensure there is a clear separation (e.g., a horizontal rule `---`) between the main sections.
+    조회된 결과를 바탕으로 사용자에게 가장 유용한 정보를 요약하여 전달합니다.
     """,
     tools=[request_tool, get_results_tool, date_tool],
     llm=llm,
@@ -58,10 +32,10 @@ train_search_task = Task(
     당신의 임무는 2단계 프로세스이며, 반드시 순서대로 따라야 합니다.
 
     1단계: 사용자의 질문('{query}')을 분석하여 출발역, 도착역, 날짜를 파악하세요.
-    만약 '내일'과 같은 상대적 날짜가 있다면 'Current Date Finder' 도구를 먼저 사용해 정확한 날짜를 계산해야 합니다.
-    모든 정보가 준비되면, 'Request Train Search' 도구를 사용해 검색을 '요청'하고 '작업 ID'를 받으세요.
-
-    2단계: 1단계에서 받은 '작업 ID'를 사용하여 'Get Train Search Results' 도구를 호출하여 실제 열차 정보 목록을 '조회'해야 합니다.
+    'Smart Date Calculator Tool'을 사용하여 사용자 질문 속의 날짜 표현을 'YYYY-MM-DD' 형식으로 변환해야 합니다.
+    
+    2단계: 정확한 출발역, 도착역, 날짜가 모두 준비되면, 'Request Train Search' 도구를 사용해 검색을 '요청'하고 '작업 ID'를 받으세요.
+    그 다음, 받은 '작업 ID'를 사용하여 'Get Train Search Results' 도구로 실제 열차 정보 목록을 '조회'해야 합니다.
     
     주의: 'Request Train Search'의 결과는 작업 ID일 뿐, 최종 결과가 아닙니다.
     반드시 2단계를 거쳐 실제 열차 정보를 얻은 후에만 사용자에게 최종 답변을 할 수 있습니다.
@@ -72,7 +46,7 @@ train_search_task = Task(
     """,
 
     tools=[request_tool, get_results_tool, date_tool],
-    agent=travel_agent
+    agent=train_search_agent
 )
 
 
@@ -103,8 +77,67 @@ weather_task = Task(
 )
 
 
+final_report_agent = Agent(
+    role="최종 보고서 작성 전문가 (Final Report Specialist)",
+    goal="기차 스케줄과 날씨 정보를 사용자가 요청한 특정 포맷에 맞춰 완벽하게 결합하여, 명확하고 실행 가능한 최종 답변을 생성합니다.",
+    backstory="""
+    당신은 정보를 명확하고 구조적으로 정리하는 데 매우 능숙한 커뮤니케이션 전문가입니다.
+    당신의 가장 중요한 임무는 'train_search_task'로부터 받은 원본 열차 데이터를 아래의 # INSTRUCTION 에 따라 완벽하게 재구성하는 것입니다.
+    그 후에 'weather_task'의 날씨 정보를 자연스럽게 덧붙여 사용자가 한눈에 모든 정보를 파악할 수 있도록 최종 답변을 완성해야 합니다.
+
+    # INSTRUCTION
+    When a user asks for the SRT schedule, follow these steps to generate the response:
+
+    1.  **Analyze the entire schedule data** provided for the requested date and route.
+    2.  **Primary Categorization**: First, classify all trains into two distinct groups: "예매 가능 (Available)" and "매진 (Sold Out)". A train is considered "Available" if at least one type of seat (e.g., 일반석 or 특실) can be booked.
+    3.  **Initial Summary**: Begin the response with a friendly greeting and a concise summary. This summary must include the total number of available trains. (e.g., "안녕하세요! yyyy년 mm월 dd일(요일) ... 총 16편의 열차에서 예매 가능한 좌석을 확인했습니다.")
+    4.  **Display "Available" Trains First**:
+        * Create a main section with the heading "✅ 예매 가능".
+        * **Secondary Categorization (Time-based)**: Within the "Available" section, further group the trains by time of day:
+            * 오전 (05:00 - 11:59)
+            * 오후 (12:00 - 17:59)
+            * 저녁/심야 (18:00 onwards)
+        * Use these as subheadings.
+        * For each available train, list the information in a single bullet point line with the following format:
+            `* **'출발시간'** 출발 ('열차번호') → '도착시간' 도착 ({예약 가능한 좌석 정보})`
+        * Example for seat information: `(일반석 가능)`, `(특실 가능)`, `(일반석, 특실 모두 가능)`. Be concise.
+    5.  **Display "Sold Out" Trains Second**:
+        * Create a second main section with the heading "❌ 매진".
+        * List the sold-out trains below this heading. For brevity, you can list just the departure times if the list is long.
+    6.  **Concluding Remark**: End with a helpful and friendly closing remark, encouraging the user to book quickly (including booking URL). (e.g., "실시간으로 좌석 현황이 변경될 수 있으니, 빠른 예매를 추천합니다.")
+    7.  **Formatting**:
+        * Use Markdown for headings (`##`), bolding (`**`), and bullet points (`*`).
+        * Use emojis (✅, ❌) to make the sections visually distinct and intuitive.
+        * Ensure there is a clear separation (e.g., a horizontal rule `---`) between the main sections.
+    """,
+    llm=llm,
+    verbose=True
+)
+
+
+final_report_task = Task(
+    description="""
+    당신의 임무는 이전 단계에서 완료된 기차 조회와 날씨 조회 태스크의 결과를 종합하여 최종 보고서를 작성하는 것입니다.
+    당신은 이전 태스크들의 모든 대화 기록과 최종 결과에 접근할 수 있습니다.
+
+    1. **기차 정보 형식화**: 'train_search_task'의 결과로 받은 전체 열차 스케줄 원본 데이터를 분석하세요. 당신의 'backstory'에 명시된 # INSTRUCTION 의 7가지 규칙을 순서대로, 글자 그대로 정확하게 적용하여 기차 정보 부분을 작성해야 합니다. 이것이 당신의 가장 중요한 임무입니다.
+
+    2. **날씨 정보 결합**: 위 기차 정보 작성이 완료되면, 그 바로 아래에 'weather_task'의 결과로 받은 도착지의 날씨 요약 정보를 자연스러운 문장으로 덧붙여주세요. (예시: "더불어, 여행하시는 날 부산의 날씨는 맑을 것으로 예상됩니다.")
+
+    이 두 정보가 완벽하게 결합된 하나의 완성된 보고서를 최종 결과물로 제출하세요.
+    """,
+    expected_output="""
+    사용자에게 전달될 최종 완성형 답변.
+    # INSTRUCTION 에 명시된 모든 서식(인사말, 예매 가능 열차 수 요약, ✅ 예매 가능 섹션, ❌ 매진 섹션, 구분선, 마무리 멘트 등)이 완벽하게 적용된 기차 스케줄 정보가 먼저 표시되어야 합니다.
+    그 뒤에 도착지의 날씨 정보가 자연스럽게 추가된 형태여야 합니다.
+    """,
+    agent=final_report_agent,
+    context=[train_search_task, weather_task]
+)
+
+
 travel_crew = Crew(
-    agents=[travel_agent, weather_expert], 
-    tasks=[train_search_task, weather_task],
+    agents=[train_search_agent, weather_expert, final_report_agent], 
+    tasks=[train_search_task, weather_task, final_report_task],
     verbose=True
 )
