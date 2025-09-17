@@ -1,11 +1,14 @@
 from crewai import Agent, Task, Crew, LLM
-from agents.tools import RequestTrainSearchTool, GetTrainSearchResultsTool, CurrentDateTool
+from agents.tools.search_srt import RequestTrainSearchTool, GetTrainSearchResultsTool, CurrentDateTool
+from agents.tools.weather import WeatherSearchTool
 
 
 llm = LLM(model="gemini-2.5-flash-lite", temperature=0)
+
 request_tool = RequestTrainSearchTool()
 get_results_tool = GetTrainSearchResultsTool()
 date_tool = CurrentDateTool()
+weather_tool = WeatherSearchTool()
 
 
 travel_agent = Agent(
@@ -73,8 +76,35 @@ train_search_task = Task(
 )
 
 
+weather_expert = Agent(
+    role="일기 예보 전문가 (Weather Forecast Expert)",
+    goal="사용자가 여행할 도착지의 날씨 정보를 정확하게 제공합니다.",
+    backstory="""당신은 기상학 박사 학위를 가진 전문가로,
+    전 세계의 날씨 데이터를 분석하여 여행객에게 가장 정확하고 이해하기 쉬운 날씨 정보를 제공합니다.
+    특히 단기 예보에 강점을 보입니다.""",
+    tools=[weather_tool],
+    llm=llm,
+    verbose=True
+)
+
+
+weather_task = Task(
+    description="""
+    기차 조회 결과에서 최종 목적지(도착역)와 날짜 정보를 파악하세요.
+    'Weather Search Tool'을 사용하여 해당 목적지와 날짜의 날씨를 조회합니다.
+    조회된 날씨 정보를 간결하게 요약하여 전달합니다.
+    """,
+    expected_output="""
+    도착지의 날씨 정보에 대한 한두 문장의 간결한 요약.
+    예: "부산의 내일 날씨는 맑을 예정이며, 기온은 15도에서 25도 사이입니다."
+    """,
+    agent=weather_expert,
+    context=[train_search_task]
+)
+
+
 travel_crew = Crew(
-    agents=[travel_agent],
-    tasks=[train_search_task],
+    agents=[travel_agent, weather_expert], 
+    tasks=[train_search_task, weather_task],
     verbose=True
 )
